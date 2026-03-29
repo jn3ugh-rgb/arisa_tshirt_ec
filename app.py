@@ -96,25 +96,30 @@ def show_admin_panel():
 
     tab1, tab2, tab3 = st.tabs(["受注一覧", "在庫管理", "設定"])
     
-    with tab1:
-        st.subheader("未入金の注文")
-        # 本来はGSheetsから読み込んだDataFrameを表示
-        dummy_data = pd.DataFrame({
-            "ID": ["24032901", "24032902"],
-            "名前": ["山田太郎", "佐藤花子"],
-            "金額": [3500, 7000],
-            "状態": ["未入金", "未入金"]
-        })
-        st.dataframe(dummy_data, use_container_width=True)
-        
-        if st.button("選択した注文を入金済みにする"):
-            st.toast("入金ステータスを更新しました！")
+    # 管理者画面内の「在庫管理」タブのイメージ
+with st.tabs_list[1]:
+    st.subheader("📦 商品・在庫マスタ管理")
+    
+    # 既存商品の編集（一覧表示と一括更新）
+    df_inventory = db.get_inventory() # database.pyから全データ取得
+    edited_df = st.data_editor(df_inventory, num_rows="dynamic") 
+    
+    if st.button("マスタ情報を一括更新する"):
+        db.update_all_inventory(edited_df)
+        st.success("商品情報を更新しました！")
 
-    with tab2:
-        st.subheader("現在の在庫数")
-        # 在庫編集フォーム
-        st.number_input("Black Lサイズ 在庫", value=15)
-        st.button("在庫を更新する")
+    st.divider()
+
+    # 新規商品のクイック登録
+    with st.expander("＋ 新規商品を登録する"):
+        new_sku = st.text_input("SKUコード (例: ADV-S)")
+        new_name = st.text_input("商品名")
+        new_size = st.text_input("サイズ")
+        new_price = st.number_input("単価", min_value=0, step=100)
+        
+        if st.button("登録実行"):
+            db.add_new_item(new_sku, new_name, new_size, new_price)
+            st.rerun()
 
 # --- 5. メインルーティング ---
 if app_mode == "注文フォーム":
