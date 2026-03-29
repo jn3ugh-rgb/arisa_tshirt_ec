@@ -1,0 +1,9 @@
+streamlit
+gspread
+google-auth
+google-cloud-storage
+streamlit-authenticator
+PyYAML
+bcrypt
+pandas
+streamlit
