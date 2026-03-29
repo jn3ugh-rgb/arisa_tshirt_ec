@@ -3,60 +3,62 @@ import pandas as pd
 from datetime import datetime
 import os
 
-# --- 1. ページ基本設定 & リッチUI用CSS ---
+# --- 1. ページ基本設定 & UIカスタム ---
 st.set_page_config(
-    page_title="Official T-Shirt Order",
+    page_title="Official T-Shirt Order System",
     page_icon="👕",
     layout="centered"
 )
 
+# カスタムCSSの読み込み（リッチなUI用）
 def local_css(file_name):
     if os.path.exists(file_name):
         with open(file_name) as f:
             st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
 
-# CSSの読み込み（assets/css/style.css がある想定）
 local_css("assets/css/style.css")
 
-# --- 2. モード切り替え（サイドバー） ---
+# --- 2. ナビゲーション（サイドバー） ---
 st.sidebar.title("Navigation")
 app_mode = st.sidebar.radio("表示画面を選択", ["注文フォーム", "管理者パネル"])
 
 # --- 3. ユーザー用：注文フォーム画面 ---
 def show_order_form():
     st.markdown('<h1 class="main-title">Official T-Shirt Order</h1>', unsafe_allow_html=True)
-    
-    # 1. 単価の設定（本来はinventoryシートから取得）
-    PRICE_BLACK = 3500
-    PRICE_WHITE = 3500
-    PRICE_ADVANCE = 4000
+    st.write("ご希望のTシャツを選択し、必要事項を入力してください。")
+
+    # 本来はDB(inventory)から取得するが、MVP用にダミーデータを定義
+    # SKU: [商品名, サイズ, 単価, 在庫数]
+    items_master = {
+        "BLACK-L": ["Tシャツ（黒）", "L", 3500, 15],
+        "WHITE-M": ["Tシャツ（白）", "M", 3500, 10],
+        "ADV-S": ["アドバンス", "S", 4000, 5]
+    }
 
     st.subheader("1. 商品を選択")
-    col1, col2, col3 = st.columns(3)
+    order_quantities = {}
     
-    with col1:
-        st.image("https://via.placeholder.com/150", caption=f"Black (¥{PRICE_BLACK:,})")
-        q_black = st.number_input("数量", min_value=0, step=1, key="q_black")
-    with col2:
-        st.image("https://via.placeholder.com/150", caption=f"White (¥{PRICE_WHITE:,})")
-        q_white = st.number_input("数量", min_value=0, step=1, key="q_white")
-    with col3:
-        st.image("https://via.placeholder.com/150", caption=f"Advance (¥{PRICE_ADVANCE:,})")
-        q_adv = st.number_input("数量", min_value=0, step=1, key="q_adv")
+    # 3列で商品を表示
+    cols = st.columns(len(items_master))
+    for i, (sku, info) in enumerate(items_master.items()):
+        with cols[i]:
+            st.image("https://via.placeholder.com/150", caption=f"{info[0]} ({info[1]})")
+            st.write(f"価格: ¥{info[2]:,}")
+            st.write(f"在庫: {info[3]}")
+            order_quantities[sku] = st.number_input("数量", min_value=0, max_value=info[3], step=1, key=sku)
 
-    # 2. 合計金額の計算
-    total_price = (q_black * PRICE_BLACK) + (q_white * PRICE_WHITE) + (q_adv * PRICE_ADVANCE)
+    # 合計金額の計算
+    total_price = sum(order_quantities[sku] * items_master[sku][2] for sku in items_master)
 
-    # 3. 合計金額のリッチな表示
     if total_price > 0:
         st.markdown(f"""
             <div style="background-color: #f0f2f6; padding: 20px; border-radius: 10px; text-align: center; margin: 20px 0;">
                 <span style="font-size: 18px; color: #555;">ご注文合計金額</span><br>
                 <span style="font-size: 32px; font-weight: bold; color: #ff4b4b;">¥{total_price:,}</span>
+                <p style="font-size: 12px; color: #888; margin-top: 5px;">※振込手数料はご負担ください</p>
             </div>
         """, unsafe_allow_html=True)
-    
-    # --- このあとにユーザー情報入力や決済選択を続ける ---
+
     # 注文者情報
     st.subheader("2. お届け先・ご連絡先")
     with st.container():
@@ -64,25 +66,29 @@ def show_order_form():
         team_name = st.text_input("所属チーム名（個人の場合は空欄）")
         user_name = st.text_input("お名前（代表者氏名）")
         tel = st.text_input("電話番号")
+        transfer_name = st.text_input("振込名義（カタカナ）", help="消込に使用します")
 
-    # 決済方法の選択
+    # 決済方法
     st.subheader("3. お支払い方法")
     pay_method = st.radio("支払い方法を選択", ["PayPay", "銀行振込"])
 
     if st.button("内容を確認して注文する", use_container_width=True):
-        # ここでバリデーションとID生成を行う
-        order_id = datetime.now().strftime("%y%m%d%H%M")
-        
-        # セッションに入力内容を保持して「決済案内画面」へ（簡易実装）
-        st.success(f"注文を受け付けました！注文ID: {order_id}")
-        
-        if pay_method == "PayPay":
-            st.info("以下のQRコードから送金をお願いします。")
-            st.image("assets/images/paypay_qr.png", width=200)
-            st.warning("送金後、決済番号の末尾4桁を公式LINEへお送りください。")
+        if not user_name or not tel:
+            st.error("お名前と電話番号を入力してください。")
+        elif total_price == 0:
+            st.warning("商品を選択してください。")
         else:
-            st.info("以下の口座へお振込みをお願いします。")
-            st.code(f"振込名義：{order_id} {user_name}\n〇〇銀行 △△支店 普通 1234567")
+            order_id = datetime.now().strftime("%y%m%d%H%M")
+            st.balloons()
+            st.success(f"注文を受け付けました！注文ID: {order_id}")
+            
+            if pay_method == "PayPay":
+                st.info("以下のQRコードから送金をお願いします。")
+                st.image("assets/images/paypay_qr.png", width=200)
+                st.warning("送金後、決済番号の末尾4桁を公式LINEへお送りください。")
+            else:
+                st.info("以下の口座へお振込みをお願いします。")
+                st.code(f"振込名義：{order_id} {transfer_name}\n〇〇銀行 △△支店 普通 1234567")
 
 # --- 4. 管理者用：管理パネル ---
 def show_admin_panel():
@@ -94,32 +100,48 @@ def show_admin_panel():
         st.error("パスワードが正しくありません")
         return
 
-    tab1, tab2, tab3 = st.tabs(["受注一覧", "在庫管理", "設定"])
+    # タブの修正（AttributeError対策）
+    tab1, tab2, tab3 = st.tabs(["受注一覧", "在庫・商品管理", "設定"])
     
-    # 管理者画面内の「在庫管理」タブのイメージ
-with st.tabs_list[1]:
-    st.subheader("📦 商品・在庫マスタ管理")
-    
-    # 既存商品の編集（一覧表示と一括更新）
-    df_inventory = db.get_inventory() # database.pyから全データ取得
-    edited_df = st.data_editor(df_inventory, num_rows="dynamic") 
-    
-    if st.button("マスタ情報を一括更新する"):
-        db.update_all_inventory(edited_df)
-        st.success("商品情報を更新しました！")
+    with tab1:
+        st.subheader("受注データ一覧")
+        # ダミーデータ
+        dummy_orders = pd.DataFrame({
+            "注文ID": ["26033001", "26033002"],
+            "名前": ["米山望", "ありさ"],
+            "金額": [3500, 7000],
+            "状態": ["未入金", "入金済"]
+        })
+        st.dataframe(dummy_orders, use_container_width=True)
+        st.button("選択した注文を入金済みに更新")
 
-    st.divider()
-
-    # 新規商品のクイック登録
-    with st.expander("＋ 新規商品を登録する"):
-        new_sku = st.text_input("SKUコード (例: ADV-S)")
-        new_name = st.text_input("商品名")
-        new_size = st.text_input("サイズ")
-        new_price = st.number_input("単価", min_value=0, step=100)
+    with tab2:
+        st.subheader("📦 商品マスタ・在庫管理")
+        st.write("商品の追加や在庫数の変更ができます。")
         
-        if st.button("登録実行"):
-            db.add_new_item(new_sku, new_name, new_size, new_price)
-            st.rerun()
+        # 簡易的な在庫編集フォーム
+        with st.expander("＋ 新規商品を登録する"):
+            new_sku = st.text_input("SKUコード (例: BLACK-XL)")
+            new_name = st.text_input("商品名")
+            new_price = st.number_input("単価", min_value=0, step=100)
+            if st.button("商品を登録"):
+                st.toast(f"商品 {new_name} を登録しました（未実装）")
+
+        st.divider()
+        st.write("現在の在庫一覧（編集可能）")
+        # 本来はDBから読み込んだものを st.data_editor で表示
+        inventory_data = pd.DataFrame([
+            {"SKU": "BLACK-L", "商品名": "Tシャツ（黒）", "在庫": 15},
+            {"SKU": "WHITE-M", "商品名": "Tシャツ（白）", "在庫": 10}
+        ])
+        st.data_editor(inventory_data, num_rows="dynamic")
+        st.button("在庫情報を一括保存")
+
+    with tab3:
+        st.subheader("基本設定")
+        st.text_input("振込先銀行口座情報", value="〇〇銀行 △△支店 普通 1234567")
+        st.file_uploader("PayPay QRコード画像を更新", type=["png", "jpg"])
+        st.button("設定を保存")
 
 # --- 5. メインルーティング ---
 if app_mode == "注文フォーム":
