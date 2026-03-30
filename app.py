@@ -30,6 +30,12 @@ if "config" not in st.session_state:
 if "items_master" not in st.session_state:
     with st.spinner("データを読み込み中..."):
         df = database.load_items()
+        if df is not None and not df.empty:
+            st.session_state.items_master = df
+        else:
+            # 読み込み失敗時のバックアップ
+            st.session_state.items_master = pd.DataFrame(columns=["id", "category", "size", "price", "stock", "img"])
+            st.warning("スプレッドシートからデータを読み込めませんでした。")
         if df.empty:
             # データが空の場合の初期サンプル
             st.session_state.items_master = pd.DataFrame(columns=["id", "category", "size", "price", "stock", "img"])
