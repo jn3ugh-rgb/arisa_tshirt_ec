@@ -1,0 +1,14 @@
+# Google Cloudの認証キー（最重要！）
+service_account.json
+
+# Pythonのキャッシュファイル
+__pycache__/
+*.pyc
+
+# 仮想環境（もし作っていたら）
+venv/
+.venv/
+
+# OSが勝手に作るゴミファイル
+.DS_Store
+Thumbs.db
