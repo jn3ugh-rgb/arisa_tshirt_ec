@@ -56,3 +56,19 @@ def save_items(df):
         st.success("✅ スプレッドシートを更新しました！")
     except Exception as e:
         st.error(f"💾 保存エラー: {e}")
+def load_orders():
+    """受注データを読み込む"""
+    client = get_gss_client()
+    if client is None:
+        return pd.DataFrame()
+
+    try:
+        sh = client.open_by_url(SPREADSHEET_URL)
+        # 「orders」という名前のシート（タブ）を読みに行くよ
+        worksheet = sh.worksheet("orders")
+        data = worksheet.get_all_records()
+        return pd.DataFrame(data)
+    except Exception as e:
+        st.error(f"注文データの読み込みエラー: {e}")
+        # まだシートがない場合は、空のカラムだけ準備するよ
+        return pd.DataFrame(columns=["日時", "お名前", "電話番号", "注文内容", "合計金額", "支払い方法", "決済番号", "対応ステータス"])
