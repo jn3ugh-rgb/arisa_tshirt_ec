@@ -8,21 +8,21 @@ import os
 SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1IEnzTaI5Yqbkc9H4jmv3D4DfjWrUdbh21tzXWSwTyjQ/edit"
 
 def get_gss_client():
-    """Google Sheets APIに接続するためのクライアントを作成"""
+    """Google Sheets APIに接続（Secrets対応版）"""
     scopes = [
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive"
     ]
     
-    # ファイルの場所を確認
-    json_path = 'service_account.json'
-    
-    if not os.path.exists(json_path):
-        st.error(f"⚠️ エラー: '{json_path}' が見つかりません。現在のフォルダ: {os.getcwd()}")
-        return None
-    
     try:
-        creds = Credentials.from_service_account_file(json_path, scopes=scopes)
+        # ローカルにファイルがあればそれを使う、なければSecretsを使う
+        if os.path.exists('service_account.json'):
+            creds = Credentials.from_service_account_file('service_account.json', scopes=scopes)
+        else:
+            # Streamlit Cloud上ではこちらが動くよ
+            creds_info = st.secrets["gcp_service_account"]
+            creds = Credentials.from_service_account_info(creds_info, scopes=scopes)
+            
         return gspread.authorize(creds)
     except Exception as e:
         st.error(f"❌ 認証に失敗しました: {e}")
