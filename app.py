@@ -2,7 +2,8 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 import os
-import src.storage as storage # storage.pyをインポート
+import src.storage as storage
+import src.database as database  # database.py をインポート
 
 # --- 1. ページ基本設定 ---
 st.set_page_config(
@@ -21,16 +22,19 @@ if "cart" not in st.session_state:
 if "config" not in st.session_state:
     st.session_state.config = {
         "paypay_id": "arisa_tshirt",
-        "bank_info": "〇〇銀行 △△支店 普通 1234567"
+        "bank_info": "〇〇銀行 △△支店 普通 1234567",
+        "sheet_url": "https://docs.google.com/spreadsheets/d/1IEnzTaI5Yqbkc9H4jmv3D4DfjWrUdbh21tzXWSwTyjQ/edit"
     }
 
-# 商品マスタの初期データ
+# 商品マスタの初期化（GSSから読み込み）
 if "items_master" not in st.session_state:
-    st.session_state.items_master = pd.DataFrame([
-        {"id": 1, "category": "Tシャツ（黒）", "size": "S", "price": 3500, "stock": 5, "img": "https://via.placeholder.com/150"},
-        {"id": 2, "category": "Tシャツ（黒）", "size": "L", "price": 3500, "stock": 10, "img": "https://via.placeholder.com/150"},
-        {"id": 3, "category": "Tシャツ（白）", "size": "M", "price": 3500, "stock": 8, "img": "https://via.placeholder.com/150"},
-    ])
+    with st.spinner("データを読み込み中..."):
+        df = database.load_items()
+        if df.empty:
+            # データが空の場合の初期サンプル
+            st.session_state.items_master = pd.DataFrame(columns=["id", "category", "size", "price", "stock", "img"])
+        else:
+            st.session_state.items_master = df
 
 # --- 3. ナビゲーション ---
 st.sidebar.title("Shop Menu")
@@ -48,7 +52,7 @@ def show_order_form():
     items_df = st.session_state.items_master
 
     if items_df.empty:
-        st.info("現在、販売中の商品はありません。")
+        st.info("現在、準備中です。しばらくお待ちください。")
         return
 
     st.subheader("1. 商品を選んでカートに追加")
@@ -57,11 +61,9 @@ def show_order_form():
     
     filtered_items = items_df[items_df['category'] == selected_cat]
     
-    # 商品を並べて表示
     cols = st.columns(len(filtered_items))
     for i, (_, row) in enumerate(filtered_items.iterrows()):
         with cols[i]:
-            # 画像を表示（ここでエラーが出ないようにstorage.pyで対策済み）
             st.image(row['img'], use_container_width=True)
             st.write(f"**サイズ: {row['size']}**")
             st.write(f"¥{row['price']:,} (残り{row['stock']}枚)")
@@ -69,10 +71,11 @@ def show_order_form():
             if st.button(f"カートに入れる", key=f"btn_{row['id']}"):
                 if row['stock'] > 0:
                     st.session_state.cart.append({
+                        "id": row['id'],
                         "name": f"{row['category']} ({row['size']})",
                         "price": row['price']
                     })
-                    st.toast(f"{row['category']} をカートに入れました！")
+                    st.toast(f"{row['category']} を追加しました！")
                     st.rerun()
                 else:
                     st.error("在庫切れです")
@@ -94,62 +97,69 @@ def show_order_form():
                 st.rerun()
             total_price += item['price']
         
-        st.markdown(f"""
-            <div style="background-color: #f0f2f6; padding: 20px; border-radius: 10px; text-align: center; margin: 20px 0;">
-                <span style="font-size: 18px; color: #555;">ご注文合計金額</span><br>
-                <span style="font-size: 32px; font-weight: bold; color: #ff4b4b;">¥{total_price:,}</span>
-            </div>
-        """, unsafe_allow_html=True)
+        st.markdown(f'<div style="background-color: #f0f2f6; padding: 20px; border-radius: 10px; text-align: center; margin: 20px 0;">合計金額: <span style="font-size: 32px; font-weight: bold; color: #ff4b4b;">¥{total_price:,}</span></div>', unsafe_allow_html=True)
 
     if total_price > 0:
         st.subheader("2. お客様情報の入力")
         user_name = st.text_input("お名前")
         user_tel = st.text_input("電話番号")
+        pay_method = st.radio("支払い方法", ["PayPay", "銀行振込"])
         
-        st.subheader("3. お支払い方法")
-        pay_method = st.radio("支払い方法を選択", ["PayPay", "銀行振込"])
-        
+        pay_ref = ""
         if pay_method == "PayPay":
-            pp_id = st.session_state.config['paypay_id']
-            st.info(f"PayPay ID: **{pp_id}** を検索して送金してください。")
-            st.code(pp_id, language=None)
-            paypay_ref = st.text_input("決済番号の下4桁")
+            st.info(f"PayPay ID: **{st.session_state.config['paypay_id']}**")
+            pay_ref = st.text_input("決済番号の下4桁")
         
         if st.button("注文を確定する", use_container_width=True):
             if user_name and user_tel:
-                st.balloons()
-                st.success("注文が完了しました！ありささんからの連絡をお待ちください。")
-                st.session_state.cart = []
+                with st.spinner("注文を送信中..."):
+                    # 受注データをGSSに書き込み
+                    order_items = ", ".join([item['name'] for item in st.session_state.cart])
+                    order_data = [
+                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        user_name,
+                        user_tel,
+                        order_items,
+                        total_price,
+                        pay_method,
+                        pay_ref,
+                        "未対応"
+                    ]
+                    database.add_order(order_data)
+                    
+                    # 在庫を減らす簡易処理（本来はここも保存が必要）
+                    st.balloons()
+                    st.success("注文が完了しました！シートに記録されました。")
+                    st.session_state.cart = []
             else:
-                st.error("お名前と電話番号を入力してください。")
+                st.error("入力漏れがあります")
 
 # --- 5. 管理者用：管理パネル ---
 def show_admin_panel():
     st.title("⚙️ 管理者専用パネル")
     
     if not st.session_state.authenticated:
-        pwd = st.text_input("パスワードを入力してください", type="password")
+        pwd = st.text_input("パスワード", type="password")
         if st.button("ログイン"):
             if pwd == st.secrets.get("admin_password", "admin123"):
-                st.session_state.authenticated = True
-                st.rerun()
-            else:
-                st.error("パスワードが違います")
+                st.session_state.authenticated = True; st.rerun()
         return
 
     tab1, tab2, tab3 = st.tabs(["📊 受注管理", "📦 商品マスタ管理", "🔧 ショップ設定"])
     
     with tab1:
         st.subheader("注文一覧")
-        st.info("ここにスプレッドシートの注文データが表示されます")
+        if st.button("最新の注文を読み込む"):
+            orders_df = database.load_orders()
+            st.dataframe(orders_df, use_container_width=True)
+        else:
+            st.info("ボタンを押すとGSSから注文データを読み込みます")
 
     with tab2:
         st.subheader("新商品の追加（サイズ一括登録）")
         with st.expander("＋ 種類ごとにまとめて登録する"):
-            new_cat = st.text_input("商品名（例：2026限定Tシャツ）")
-            new_price = st.number_input("単価", value=3500, step=100)
-            
-            st.write("展開するサイズを選択：")
+            new_cat = st.text_input("商品名")
+            new_price = st.number_input("価格", value=3500, step=100)
             size_list = ["S", "M", "L", "XL", "XXL"]
             selected_sizes = []
             size_cols = st.columns(len(size_list))
@@ -157,70 +167,59 @@ def show_admin_panel():
                 if size_cols[i].checkbox(s, key=f"reg_s_{s}"):
                     selected_sizes.append(s)
             
-            u_file = st.file_uploader("商品画像（全サイズ共通）", type=["jpg", "png"])
+            u_file = st.file_uploader("商品画像", type=["jpg", "png"])
             
-            if st.button("この内容で一括登録"):
+            if st.button("一括登録"):
                 if new_cat and selected_sizes:
                     with st.spinner("画像を処理中..."):
                         img_url = storage.upload_image(u_file)
                     
-                    # 現在の最大IDを取得
                     current_max_id = st.session_state.items_master['id'].max() if len(st.session_state.items_master) > 0 else 0
-                    
                     new_rows = []
                     for i, s in enumerate(selected_sizes):
-                        new_rows.append({
-                            "id": current_max_id + (i + 1),
-                            "category": new_cat,
-                            "size": s,
-                            "price": new_price,
-                            "stock": 0,
-                            "img": img_url
-                        })
+                        new_rows.append({"id": int(current_max_id + (i + 1)), "category": new_cat, "size": s, "price": new_price, "stock": 0, "img": img_url})
                     
                     st.session_state.items_master = pd.concat([st.session_state.items_master, pd.DataFrame(new_rows)], ignore_index=True)
-                    st.success(f"「{new_cat}」を登録しました！")
-                    st.rerun()
+                    st.success("追加しました！「保存」を押すとGSSに反映されます。")
                 else:
-                    st.warning("商品名とサイズを選んでください")
+                    st.warning("入力が足りません")
 
         st.divider()
-        st.subheader("商品データの直接編集（Excel風）")
+        st.subheader("商品データの直接編集")
         edited_df = st.data_editor(
             st.session_state.items_master,
             column_config={
                 "price": st.column_config.NumberColumn("単価", format="¥%d"),
-                "stock": st.column_config.NumberColumn("在庫数"),
-                "img": st.column_config.ImageColumn("画像プレビュー")
+                "img": st.column_config.ImageColumn("画像")
             },
-            disabled=["id"],
-            hide_index=True,
-            use_container_width=True
+            disabled=["id"], hide_index=True, use_container_width=True
         )
-        if st.button("編集内容をマスタに保存"):
-            st.session_state.items_master = edited_df
-            st.success("商品情報を更新しました！")
+        if st.button("編集内容をGSSに保存"):
+            with st.spinner("GSSを更新中..."):
+                database.save_items(edited_df)
+                st.session_state.items_master = edited_df
+                st.success("スプレッドシートを更新しました！")
 
         st.divider()
         st.subheader("🗑️ 商品の削除")
         delete_options = [f"{row['id']}: {row['category']} ({row['size']})" for _, row in st.session_state.items_master.iterrows()]
-        target_to_delete = st.multiselect("削除する商品を選択してください", options=delete_options)
-        
-        if st.button("選択した商品を完全に削除する", type="primary"):
+        target_to_delete = st.multiselect("削除する商品を選択", options=delete_options)
+        if st.button("選択削除", type="primary"):
             if target_to_delete:
                 ids_to_drop = [int(item.split(":")[0]) for item in target_to_delete]
-                st.session_state.items_master = st.session_state.items_master[~st.session_state.items_master['id'].isin(ids_to_drop)]
-                st.success(f"{len(ids_to_drop)} 件の商品を削除しました。")
-                st.rerun()
+                new_df = st.session_state.items_master[~st.session_state.items_master['id'].isin(ids_to_drop)]
+                database.save_items(new_df)
+                st.session_state.items_master = new_df
+                st.success("削除してGSSを更新しました！"); st.rerun()
 
     with tab3:
-        st.subheader("ショップ基本設定")
+        st.subheader("ショップ・連携設定")
+        st.session_state.config['sheet_url'] = st.text_input("GSS URL", value=st.session_state.config['sheet_url'])
         st.session_state.config['paypay_id'] = st.text_input("PayPay ID", value=st.session_state.config['paypay_id'])
-        st.session_state.config['bank_info'] = st.text_area("銀行口座情報", value=st.session_state.config['bank_info'])
-        if st.button("基本設定を保存"):
-            st.success("設定を更新しました！")
+        st.session_state.config['bank_info'] = st.text_area("銀行口座", value=st.session_state.config['bank_info'])
+        if st.button("設定を保存"):
+            st.success("設定を保存しました（セッション中のみ有効）")
 
-# --- 6. メイン実行 ---
 if app_mode == "注文フォーム":
     show_order_form()
 else:
