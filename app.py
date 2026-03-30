@@ -212,21 +212,37 @@ def show_admin_panel():
             options=delete_options
         )
         
-        if st.button("選択した商品を完全に削除する", type="primary"):
-            if target_to_delete:
-                # 選択された文字列から「ID」だけを取り出す
-                ids_to_drop = [int(item.split(":")[0]) for item in target_to_delete]
-                
-                # 指定したID以外を残す（フィルタリング）
-                st.session_state.items_master = st.session_state.items_master[
-                    ~st.session_state.items_master['id'].isin(ids_to_drop)
-                ]
-                
-                st.success(f"{len(ids_to_drop)} 件の商品を削除しました。")
-                st.rerun()
-            else:
-                st.warning("削除する商品を選んでください。")
-
+            # 削除ボタン
+        if st.button("この内容で一括登録"):
+                if new_cat and selected_sizes:
+                    # 1. 現在の最大IDを取得しておく（データが空なら0とする）
+                    if len(st.session_state.items_master) > 0:
+                        current_max_id = st.session_state.items_master['id'].max()
+                    else:
+                        current_max_id = 0
+                    
+                    new_rows = []
+                    # 2. ループの中で1ずつカウントアップしていく
+                    for i, s in enumerate(selected_sizes):
+                        new_id = current_max_id + (i + 1)
+                        new_rows.append({
+                            "id": new_id,
+                            "category": new_cat,
+                            "size": s,
+                            "price": new_price,
+                            "stock": 0,
+                            "img": "https://via.placeholder.com/150"
+                        })
+                    
+                    # 3. 結合してセッションを更新
+                    new_df = pd.DataFrame(new_rows)
+                    st.session_state.items_master = pd.concat(
+                        [st.session_state.items_master, new_df], 
+                        ignore_index=True
+                    )
+                    
+                    st.success(f"「{new_cat}」を登録しました！")
+                    st.rerun()
         if st.button("編集内容をマスタに保存"):
             st.session_state.items_master = edited_df
             # db.update_inventory(edited_df)
