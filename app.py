@@ -174,4 +174,6 @@ def show_admin_panel():
 
 # --- 6. メイン実行 ---
 if app_mode == "注文フォーム":
-    show
+    show_order_form()
+else:
+    show_admin_panel()
