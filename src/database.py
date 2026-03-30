@@ -1,27 +1,58 @@
+import gspread
+from google.oauth2.service_account import Credentials
+import pandas as pd
+import streamlit as st
+import os
+
+# スプレッドシートのURL
+SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1IEnzTaI5Yqbkc9H4jmv3D4DfjWrUdbh21tzXWSwTyjQ/edit"
+
 def get_gss_client():
-    """Google Sheets APIに接続（改行エラー対策版）"""
+    """Google Sheets APIに接続（決定版）"""
     scopes = [
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive"
     ]
     
     try:
+        # 1. ローカルファイルがある場合
         if os.path.exists('service_account.json'):
             creds = Credentials.from_service_account_file('service_account.json', scopes=scopes)
+        
+        # 2. Streamlit CloudのSecretsを使う場合
         else:
-            # Streamlit CloudのSecretsから取得
-            # .to_dict() をつけることで、扱いやすい辞書形式にするよ
-            creds_info = st.secrets["gcp_service_account"].to_dict()
+            # Secretsから辞書として取得
+            # .to_dict() がエラーになる場合があるため、dict() で変換
+            raw_creds = st.secrets["gcp_service_account"]
+            creds_dict = dict(raw_creds)
             
-            # --- ここが最重要ポイント！ ---
-            # 秘密鍵の中にある「\\n」（文字列としての改行）を、
-            # 「\n」（本物の改行）に置き換える処理を追加するよ
-            if "private_key" in creds_info:
-                creds_info["private_key"] = creds_info["private_key"].replace("\\n", "\n")
+            # 秘密鍵の改行文字を本物の改行に変換
+            if "private_key" in creds_dict:
+                creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
             
-            creds = Credentials.from_service_account_info(creds_info, scopes=scopes)
+            creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
             
         return gspread.authorize(creds)
     except Exception as e:
-        st.error(f"❌ 認証に失敗しました: {e}")
+        st.error(f"❌ 認証失敗: {e}")
         return None
+
+def save_items(df):
+    """商品マスタを保存する"""
+    client = get_gss_client()
+    # clientがNone（空）のまま進むと AttributeError になるのでここで止める
+    if client is None:
+        st.error("認証クライアントの作成に失敗したため、保存できません。")
+        return
+
+    try:
+        sh = client.open_by_url(SPREADSHEET_URL)
+        worksheet = sh.worksheet("items")
+        worksheet.clear()
+        
+        # DataFrameをリスト形式に変換して書き込み
+        data = [df.columns.values.tolist()] + df.values.tolist()
+        worksheet.update(data)
+        st.success("✅ スプレッドシートを更新しました！")
+    except Exception as e:
+        st.error(f"💾 保存エラー: {e}")
