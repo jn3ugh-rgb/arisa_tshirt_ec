@@ -64,36 +64,35 @@ def show_order_form():
     
     cols = st.columns(len(filtered_items) if len(filtered_items) > 0 else 1)
     for i, (_, row) in enumerate(filtered_items.iterrows()):
-            with cols[i]:
-                img_url = row['img'] if row['img'] else "https://via.placeholder.com/150?text=No+Image"
-                st.image(img_url, use_container_width=True)
-                st.write(f"**サイズ: {row['size']}**")
-                st.write(f"¥{row['price']:,} (残り{row['stock']}枚)")
-                
-                # --- 追加：枚数選択 ---
-                # 在庫が0なら選択できないようにする
-                quantity = st.number_input(
-                    "枚数", 
-                    min_value=1, 
-                    max_value=int(row['stock']) if row['stock'] > 0 else 1, 
-                    value=1, 
-                    key=f"qty_{row['id']}",
-                    disabled=(row['stock'] <= 0)
-                )
-                
-                if st.button(f"カートに入れる", key=f"btn_{row['id']}", use_container_width=True):
-                    if row['stock'] >= quantity:
-                        # 指定された枚数分、カートに追加する
-                        for _ in range(quantity):
-                            st.session_state.cart.append({
-                                "id": row['id'],
-                                "name": f"{row['category']} ({row['size']})",
-                                "price": row['price']
-                            })
-                        st.toast(f"{row['category']} を {quantity} 枚追加しました！")
-                        st.rerun()
-                    else:
-                        st.error("在庫が足りません")
+        with cols[i]:
+            img_url = row['img'] if row['img'] else "https://via.placeholder.com/150?text=No+Image"
+            st.image(img_url, use_container_width=True)
+            st.write(f"**サイズ: {row['size']}**")
+            st.write(f"¥{row['price']:,} (残り{row['stock']}枚)")
+            
+            # 枚数選択
+            quantity = st.number_input(
+                "枚数", 
+                min_value=1, 
+                max_value=int(row['stock']) if row['stock'] > 0 else 1, 
+                value=1, 
+                key=f"qty_{row['id']}",
+                disabled=(row['stock'] <= 0)
+            )
+            
+            if st.button(f"カートに入れる", key=f"btn_{row['id']}", use_container_width=True):
+                if row['stock'] >= quantity:
+                    for _ in range(quantity):
+                        st.session_state.cart.append({
+                            "id": row['id'],
+                            "name": f"{row['category']} ({row['size']})",
+                            "price": row['price']
+                        })
+                    st.toast(f"{row['category']} を追加しました！")
+                    st.rerun()
+                else:
+                    st.error("在庫切れです")
+
     st.divider()
 
     st.subheader("🛒 現在のカート内容")
@@ -101,7 +100,7 @@ def show_order_form():
         st.write("カートは空です。")
         total_price = 0
     else:
-        # 1. カートの中身を集計（IDをキーにする）
+        # カートの中身を集計
         summary = {}
         for item in st.session_state.cart:
             item_id = item['id']
@@ -110,49 +109,34 @@ def show_order_form():
             summary[item_id]["count"] += 1
         
         total_price = 0
-        
-        # 2. 集計結果をループで回してボタンを作る
         for item_id, info in summary.items():
             c1, c2, c3, c4, c5 = st.columns([3, 1, 0.5, 1, 0.5])
-            
-            # 商品名と単価×枚数の合計
             c1.write(f"**{info['name']}**")
             subtotal = info['price'] * info['count']
             c2.write(f"¥{subtotal:,}")
             
-            # 「ー」ボタン（1枚減らす）
+            # 1枚減らす
             if c3.button("ー", key=f"minus_{item_id}"):
-                # 該当するIDのアイテムを1つだけ探して削除
                 for i, item in enumerate(st.session_state.cart):
                     if item['id'] == item_id:
                         st.session_state.cart.pop(i)
                         break
                 st.rerun()
 
-            # 枚数表示
             c4.write(f"{info['count']}枚")
 
-            # 「＋」ボタン（1枚増やす）
+            # 1枚増やす
             if c5.button("＋", key=f"plus_{item_id}"):
-                # 在庫チェック（マスタから現在の在庫を引っ張る）
                 master_row = st.session_state.items_master[st.session_state.items_master['id'] == item_id].iloc[0]
                 if master_row['stock'] > info['count']:
-                    st.session_state.cart.append({
-                        "id": item_id,
-                        "name": info['name'],
-                        "price": info['price']
-                    })
+                    st.session_state.cart.append({"id": item_id, "name": info['name'], "price": info['price']})
                     st.rerun()
                 else:
                     st.error("在庫上限です")
             
             total_price += subtotal
         
-        st.markdown(f'''
-            <div style="background-color: #f0f2f6; padding: 20px; border-radius: 10px; text-align: center; margin: 20px 0;">
-                合計金額: <span style="font-size: 32px; font-weight: bold; color: #ff4b4b;">¥{total_price:,}</span>
-            </div>
-        ''', unsafe_allow_html=True)
+        st.markdown(f'<div style="background-color: #f0f2f6; padding: 20px; border-radius: 10px; text-align: center; margin: 20px 0;">合計金額: <span style="font-size: 32px; font-weight: bold; color: #ff4b4b;">¥{total_price:,}</span></div>', unsafe_allow_html=True)
 
     if total_price > 0:
         st.subheader("2. お客様情報の入力")
@@ -168,7 +152,7 @@ def show_order_form():
         if st.button("注文を確定する", use_container_width=True, type="primary"):
             if user_name and user_tel:
                 with st.spinner("注文を送信中..."):
-                    order_items = ", ".join([item['name'] for item in st.session_state.cart])
+                    order_items = ", ".join([f"{info['name']} x {info['count']}" for info in summary.values()])
                     order_data = [
                         datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                         user_name,
