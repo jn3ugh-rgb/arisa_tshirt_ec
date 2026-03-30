@@ -155,13 +155,35 @@ def show_admin_panel():
             
             if st.button("この内容で一括登録"):
                 if new_cat and selected_sizes:
-                    # 本来はここで db.add_items_bulk(...) 
-                    st.success(f"「{new_cat}」の {', '.join(selected_sizes)} を登録しました！")
+                    # 1. 新しいデータのリストを作成
+                    new_rows = []
+                    for s in selected_sizes:
+                        new_id = len(st.session_state.items_master) + 1
+                        new_rows.append({
+                            "id": new_id,
+                            "category": new_cat,
+                            "size": s,
+                            "price": new_price,
+                            "stock": 0,  # 初期在庫は0
+                            "img": "https://via.placeholder.com/150" # 仮画像
+                        })
+                    
+                    # 2. 既存のDataFrameに結合
+                    new_df = pd.DataFrame(new_rows)
+                    st.session_state.items_master = pd.concat(
+                        [st.session_state.items_master, new_df], 
+                        ignore_index=True
+                    )
+                    
+                    st.success(f"「{new_cat}」を登録しました！")
+                    
+                    # 3. 重要：画面を再描画して表を更新する
+                    st.rerun()
                 else:
                     st.warning("商品名とサイズを選んでください")
 
         st.divider()
-        st.subheader("商品データの直接編集（Excel風）")
+        st.subheader("商品データの一覧")
         st.write("※金額や在庫を直接書き換えて「保存」を押してください。")
         
         # st.data_editor を使った一括編集
