@@ -198,7 +198,35 @@ def show_admin_panel():
             hide_index=True,
             use_container_width=True
         )
+        st.divider()
+        st.subheader("🗑️ 商品の削除")
         
+        # 削除対象を選ぶためのリストを作成（ID - カテゴリ - サイズ）
+        delete_options = [
+            f"{row['id']}: {row['category']} ({row['size']})" 
+            for _, row in st.session_state.items_master.iterrows()
+        ]
+        
+        target_to_delete = st.multiselect(
+            "削除する商品を選択してください（複数可）", 
+            options=delete_options
+        )
+        
+        if st.button("選択した商品を完全に削除する", type="primary"):
+            if target_to_delete:
+                # 選択された文字列から「ID」だけを取り出す
+                ids_to_drop = [int(item.split(":")[0]) for item in target_to_delete]
+                
+                # 指定したID以外を残す（フィルタリング）
+                st.session_state.items_master = st.session_state.items_master[
+                    ~st.session_state.items_master['id'].isin(ids_to_drop)
+                ]
+                
+                st.success(f"{len(ids_to_drop)} 件の商品を削除しました。")
+                st.rerun()
+            else:
+                st.warning("削除する商品を選んでください。")
+
         if st.button("編集内容をマスタに保存"):
             st.session_state.items_master = edited_df
             # db.update_inventory(edited_df)
