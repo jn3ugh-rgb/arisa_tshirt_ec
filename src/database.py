@@ -23,18 +23,18 @@ def get_gss_client():
         else:
             # Secretsの中にキーが存在するかチェック
             if "gcp_service_account" not in st.secrets:
-                st.error("❌ Secretsの中に 'gcp_service_account' が見つかりません。設定を再確認してください。")
+                st.error("❌ Secretsの中に 'gcp_service_account' が見つかりません。")
                 return None
             
             # 辞書として取得
             creds_dict = dict(st.secrets["gcp_service_account"])
             
-            # 秘密鍵の処理：1行で書かれていても、改行記号(\\n)が含まれていても対応する
+            # 秘密鍵の処理：1行で書かれていても対応する
             if "private_key" in creds_dict:
                 pk = creds_dict["private_key"]
-                # バックスラッシュ2つの「\\n」を本物の改行に変換
+                # エスケープされた改行を本物に変換
                 pk = pk.replace("\\n", "\n")
-                # もし最初と最後に余計な引用符がついちゃってたら除去
+                # 前後の余計な引用符を除去
                 pk = pk.strip('"').strip("'")
                 creds_dict["private_key"] = pk
             
@@ -42,7 +42,7 @@ def get_gss_client():
             
         return gspread.authorize(creds)
     except Exception as e:
-        st.error(f"❌ 認証プロセスでエラーが発生しました: {e}")
+        st.error(f"❌ 認証エラー: {e}")
         return None
 
 def load_items():
@@ -79,7 +79,6 @@ def save_items(df):
         sh = client.open_by_url(SPREADSHEET_URL)
         worksheet = sh.worksheet("items")
         worksheet.clear()
-        # ヘッダーを含めて書き込み
         data = [df.columns.values.tolist()] + df.values.tolist()
         worksheet.update(data)
         st.success("✅ スプレッドシートを更新しました！")
