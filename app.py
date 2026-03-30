@@ -123,23 +123,47 @@ def show_admin_panel():
         with st.expander("＋ 種類ごとにまとめて登録する"):
             new_cat = st.text_input("商品名（例：2026限定Tシャツ）")
             new_price = st.number_input("価格", value=3500, step=100)
+            
             size_list = ["S", "M", "L", "XL", "XXL"]
             selected_sizes = []
             size_cols = st.columns(len(size_list))
             for i, s in enumerate(size_list):
                 if size_cols[i].checkbox(s, key=f"reg_s_{s}"):
                     selected_sizes.append(s)
+            
+            # --- ここに画像アップローダーを追加 ---
+            u_file = st.file_uploader("商品画像（全サイズ共通）", type=["jpg", "png"])
+            
             if st.button("この内容で一括登録"):
                 if new_cat and selected_sizes:
+                    # 本来はここでストレージにアップロードしてURLを取得する
+                    # 一旦、MVPではアップロードされたファイル名をダミーURLとして入れる
+                    img_val = "https://via.placeholder.com/150"
+                    if u_file is not None:
+                        # 実際は storage.upload_image(u_file) の戻り値を入れる
+                        img_val = f"uploaded_{u_file.name}"
+                    
                     current_max_id = st.session_state.items_master['id'].max() if len(st.session_state.items_master) > 0 else 0
+                    
                     new_rows = []
                     for i, s in enumerate(selected_sizes):
-                        new_rows.append({"id": current_max_id + (i + 1), "category": new_cat, "size": s, "price": new_price, "stock": 0, "img": "https://via.placeholder.com/150"})
-                    st.session_state.items_master = pd.concat([st.session_state.items_master, pd.DataFrame(new_rows)], ignore_index=True)
-                    st.success(f"「{new_cat}」を登録しました！"); st.rerun()
+                        new_rows.append({
+                            "id": current_max_id + (i + 1), 
+                            "category": new_cat, 
+                            "size": s, 
+                            "price": new_price, 
+                            "stock": 0, 
+                            "img": img_val  # ここで画像情報を反映
+                        })
+                    
+                    st.session_state.items_master = pd.concat(
+                        [st.session_state.items_master, pd.DataFrame(new_rows)], 
+                        ignore_index=True
+                    )
+                    st.success(f"「{new_cat}」の {', '.join(selected_sizes)} を登録しました！")
+                    st.rerun()
                 else:
                     st.warning("商品名とサイズを選んでください")
-
         st.divider()
         st.subheader("商品データの直接編集（Excel風）")
         edited_df = st.data_editor(st.session_state.items_master, column_config={"price": st.column_config.NumberColumn("単価", format="¥%d"), "stock": st.column_config.NumberColumn("在庫数"), "img": st.column_config.ImageColumn("画像URL")}, disabled=["id"], hide_index=True, use_container_width=True)
