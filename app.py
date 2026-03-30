@@ -101,17 +101,58 @@ def show_order_form():
         st.write("カートは空です。")
         total_price = 0
     else:
-        total_price = 0
-        for idx, item in enumerate(st.session_state.cart):
-            c1, c2, c3 = st.columns([3, 1, 1])
-            c1.write(item['name'])
-            c2.write(f"¥{item['price']:,}")
-            if c3.button("削除", key=f"del_{idx}"):
-                st.session_state.cart.pop(idx)
-                st.rerun()
-            total_price += item['price']
+        # 1. カートの中身を集計（IDをキーにする）
+        summary = {}
+        for item in st.session_state.cart:
+            item_id = item['id']
+            if item_id not in summary:
+                summary[item_id] = {"name": item['name'], "price": item['price'], "count": 0}
+            summary[item_id]["count"] += 1
         
-        st.markdown(f'<div style="background-color: #f0f2f6; padding: 20px; border-radius: 10px; text-align: center; margin: 20px 0;">合計金額: <span style="font-size: 32px; font-weight: bold; color: #ff4b4b;">¥{total_price:,}</span></div>', unsafe_allow_html=True)
+        total_price = 0
+        
+        # 2. 集計結果をループで回してボタンを作る
+        for item_id, info in summary.items():
+            c1, c2, c3, c4, c5 = st.columns([3, 1, 0.5, 1, 0.5])
+            
+            # 商品名と単価×枚数の合計
+            c1.write(f"**{info['name']}**")
+            subtotal = info['price'] * info['count']
+            c2.write(f"¥{subtotal:,}")
+            
+            # 「ー」ボタン（1枚減らす）
+            if c3.button("ー", key=f"minus_{item_id}"):
+                # 該当するIDのアイテムを1つだけ探して削除
+                for i, item in enumerate(st.session_state.cart):
+                    if item['id'] == item_id:
+                        st.session_state.cart.pop(i)
+                        break
+                st.rerun()
+
+            # 枚数表示
+            c4.write(f"{info['count']}枚")
+
+            # 「＋」ボタン（1枚増やす）
+            if c5.button("＋", key=f"plus_{item_id}"):
+                # 在庫チェック（マスタから現在の在庫を引っ張る）
+                master_row = st.session_state.items_master[st.session_state.items_master['id'] == item_id].iloc[0]
+                if master_row['stock'] > info['count']:
+                    st.session_state.cart.append({
+                        "id": item_id,
+                        "name": info['name'],
+                        "price": info['price']
+                    })
+                    st.rerun()
+                else:
+                    st.error("在庫上限です")
+            
+            total_price += subtotal
+        
+        st.markdown(f'''
+            <div style="background-color: #f0f2f6; padding: 20px; border-radius: 10px; text-align: center; margin: 20px 0;">
+                合計金額: <span style="font-size: 32px; font-weight: bold; color: #ff4b4b;">¥{total_price:,}</span>
+            </div>
+        ''', unsafe_allow_html=True)
 
     if total_price > 0:
         st.subheader("2. お客様情報の入力")
