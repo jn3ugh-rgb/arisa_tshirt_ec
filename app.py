@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 import os
+import src.storage as storage # storage.pyをインポート
 
 # --- 1. ページ基本設定 ---
 st.set_page_config(
@@ -23,6 +24,7 @@ if "config" not in st.session_state:
         "bank_info": "〇〇銀行 △△支店 普通 1234567"
     }
 
+# 商品マスタの初期データ
 if "items_master" not in st.session_state:
     st.session_state.items_master = pd.DataFrame([
         {"id": 1, "category": "Tシャツ（黒）", "size": "S", "price": 3500, "stock": 5, "img": "https://via.placeholder.com/150"},
@@ -45,30 +47,38 @@ def show_order_form():
     st.markdown('# 👕 Official T-Shirt Order')
     items_df = st.session_state.items_master
 
-    st.subheader("1. 商品を選んでカートに追加")
-    categories = items_df['category'].unique()
-    if len(categories) == 0:
-        st.write("現在、販売中の商品はありません。")
+    if items_df.empty:
+        st.info("現在、販売中の商品はありません。")
         return
 
+    st.subheader("1. 商品を選んでカートに追加")
+    categories = items_df['category'].unique()
     selected_cat = st.selectbox("種類で絞り込む", categories)
+    
     filtered_items = items_df[items_df['category'] == selected_cat]
     
+    # 商品を並べて表示
     cols = st.columns(len(filtered_items))
     for i, (_, row) in enumerate(filtered_items.iterrows()):
         with cols[i]:
+            # 画像を表示（ここでエラーが出ないようにstorage.pyで対策済み）
             st.image(row['img'], use_container_width=True)
             st.write(f"**サイズ: {row['size']}**")
             st.write(f"¥{row['price']:,} (残り{row['stock']}枚)")
+            
             if st.button(f"カートに入れる", key=f"btn_{row['id']}"):
                 if row['stock'] > 0:
-                    st.session_state.cart.append({"name": f"{row['category']} ({row['size']})", "price": row['price']})
-                    st.toast(f"{row['category']} を追加しました！")
+                    st.session_state.cart.append({
+                        "name": f"{row['category']} ({row['size']})",
+                        "price": row['price']
+                    })
+                    st.toast(f"{row['category']} をカートに入れました！")
                     st.rerun()
                 else:
                     st.error("在庫切れです")
 
     st.divider()
+
     st.subheader("🛒 現在のカート内容")
     if not st.session_state.cart:
         st.write("カートは空です。")
@@ -84,32 +94,47 @@ def show_order_form():
                 st.rerun()
             total_price += item['price']
         
-        st.markdown(f'<div style="background-color: #f0f2f6; padding: 20px; border-radius: 10px; text-align: center; margin: 20px 0;">合計金額: <span style="font-size: 32px; font-weight: bold; color: #ff4b4b;">¥{total_price:,}</span></div>', unsafe_allow_html=True)
+        st.markdown(f"""
+            <div style="background-color: #f0f2f6; padding: 20px; border-radius: 10px; text-align: center; margin: 20px 0;">
+                <span style="font-size: 18px; color: #555;">ご注文合計金額</span><br>
+                <span style="font-size: 32px; font-weight: bold; color: #ff4b4b;">¥{total_price:,}</span>
+            </div>
+        """, unsafe_allow_html=True)
 
     if total_price > 0:
         st.subheader("2. お客様情報の入力")
         user_name = st.text_input("お名前")
         user_tel = st.text_input("電話番号")
+        
+        st.subheader("3. お支払い方法")
         pay_method = st.radio("支払い方法を選択", ["PayPay", "銀行振込"])
+        
         if pay_method == "PayPay":
             pp_id = st.session_state.config['paypay_id']
             st.info(f"PayPay ID: **{pp_id}** を検索して送金してください。")
             st.code(pp_id, language=None)
             paypay_ref = st.text_input("決済番号の下4桁")
+        
         if st.button("注文を確定する", use_container_width=True):
             if user_name and user_tel:
-                st.balloons(); st.success("注文が完了しました！"); st.session_state.cart = []
+                st.balloons()
+                st.success("注文が完了しました！ありささんからの連絡をお待ちください。")
+                st.session_state.cart = []
             else:
-                st.error("入力漏れがあります")
+                st.error("お名前と電話番号を入力してください。")
 
 # --- 5. 管理者用：管理パネル ---
 def show_admin_panel():
     st.title("⚙️ 管理者専用パネル")
+    
     if not st.session_state.authenticated:
-        pwd = st.text_input("パスワード", type="password")
+        pwd = st.text_input("パスワードを入力してください", type="password")
         if st.button("ログイン"):
             if pwd == st.secrets.get("admin_password", "admin123"):
-                st.session_state.authenticated = True; st.rerun()
+                st.session_state.authenticated = True
+                st.rerun()
+            else:
+                st.error("パスワードが違います")
         return
 
     tab1, tab2, tab3 = st.tabs(["📊 受注管理", "📦 商品マスタ管理", "🔧 ショップ設定"])
@@ -122,8 +147,9 @@ def show_admin_panel():
         st.subheader("新商品の追加（サイズ一括登録）")
         with st.expander("＋ 種類ごとにまとめて登録する"):
             new_cat = st.text_input("商品名（例：2026限定Tシャツ）")
-            new_price = st.number_input("価格", value=3500, step=100)
+            new_price = st.number_input("単価", value=3500, step=100)
             
+            st.write("展開するサイズを選択：")
             size_list = ["S", "M", "L", "XL", "XXL"]
             selected_sizes = []
             size_cols = st.columns(len(size_list))
@@ -131,62 +157,70 @@ def show_admin_panel():
                 if size_cols[i].checkbox(s, key=f"reg_s_{s}"):
                     selected_sizes.append(s)
             
-            # --- ここに画像アップローダーを追加 ---
             u_file = st.file_uploader("商品画像（全サイズ共通）", type=["jpg", "png"])
             
             if st.button("この内容で一括登録"):
                 if new_cat and selected_sizes:
-                    # 本来はここでストレージにアップロードしてURLを取得する
-                    # 一旦、MVPではアップロードされたファイル名をダミーURLとして入れる
-                    img_val = "https://via.placeholder.com/150"
-                    if u_file is not None:
-                        # 実際は storage.upload_image(u_file) の戻り値を入れる
-                        img_val = f"uploaded_{u_file.name}"
+                    with st.spinner("画像を処理中..."):
+                        img_url = storage.upload_image(u_file)
                     
+                    # 現在の最大IDを取得
                     current_max_id = st.session_state.items_master['id'].max() if len(st.session_state.items_master) > 0 else 0
                     
                     new_rows = []
                     for i, s in enumerate(selected_sizes):
                         new_rows.append({
-                            "id": current_max_id + (i + 1), 
-                            "category": new_cat, 
-                            "size": s, 
-                            "price": new_price, 
-                            "stock": 0, 
-                            "img": img_val  # ここで画像情報を反映
+                            "id": current_max_id + (i + 1),
+                            "category": new_cat,
+                            "size": s,
+                            "price": new_price,
+                            "stock": 0,
+                            "img": img_url
                         })
                     
-                    st.session_state.items_master = pd.concat(
-                        [st.session_state.items_master, pd.DataFrame(new_rows)], 
-                        ignore_index=True
-                    )
-                    st.success(f"「{new_cat}」の {', '.join(selected_sizes)} を登録しました！")
+                    st.session_state.items_master = pd.concat([st.session_state.items_master, pd.DataFrame(new_rows)], ignore_index=True)
+                    st.success(f"「{new_cat}」を登録しました！")
                     st.rerun()
                 else:
                     st.warning("商品名とサイズを選んでください")
+
         st.divider()
         st.subheader("商品データの直接編集（Excel風）")
-        edited_df = st.data_editor(st.session_state.items_master, column_config={"price": st.column_config.NumberColumn("単価", format="¥%d"), "stock": st.column_config.NumberColumn("在庫数"), "img": st.column_config.ImageColumn("画像URL")}, disabled=["id"], hide_index=True, use_container_width=True)
+        edited_df = st.data_editor(
+            st.session_state.items_master,
+            column_config={
+                "price": st.column_config.NumberColumn("単価", format="¥%d"),
+                "stock": st.column_config.NumberColumn("在庫数"),
+                "img": st.column_config.ImageColumn("画像プレビュー")
+            },
+            disabled=["id"],
+            hide_index=True,
+            use_container_width=True
+        )
         if st.button("編集内容をマスタに保存"):
-            st.session_state.items_master = edited_df; st.success("商品情報を更新しました！")
+            st.session_state.items_master = edited_df
+            st.success("商品情報を更新しました！")
 
         st.divider()
         st.subheader("🗑️ 商品の削除")
         delete_options = [f"{row['id']}: {row['category']} ({row['size']})" for _, row in st.session_state.items_master.iterrows()]
         target_to_delete = st.multiselect("削除する商品を選択してください", options=delete_options)
+        
         if st.button("選択した商品を完全に削除する", type="primary"):
             if target_to_delete:
                 ids_to_drop = [int(item.split(":")[0]) for item in target_to_delete]
                 st.session_state.items_master = st.session_state.items_master[~st.session_state.items_master['id'].isin(ids_to_drop)]
-                st.success("削除しました！"); st.rerun()
+                st.success(f"{len(ids_to_drop)} 件の商品を削除しました。")
+                st.rerun()
 
     with tab3:
         st.subheader("ショップ基本設定")
         st.session_state.config['paypay_id'] = st.text_input("PayPay ID", value=st.session_state.config['paypay_id'])
         st.session_state.config['bank_info'] = st.text_area("銀行口座情報", value=st.session_state.config['bank_info'])
-        if st.button("設定内容を保存"):
-            st.success("保存しました")
+        if st.button("基本設定を保存"):
+            st.success("設定を更新しました！")
 
+# --- 6. メイン実行 ---
 if app_mode == "注文フォーム":
     show_order_form()
 else:
