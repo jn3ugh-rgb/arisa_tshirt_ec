@@ -64,24 +64,36 @@ def show_order_form():
     
     cols = st.columns(len(filtered_items) if len(filtered_items) > 0 else 1)
     for i, (_, row) in enumerate(filtered_items.iterrows()):
-        with cols[i]:
-            img_url = row['img'] if row['img'] else "https://via.placeholder.com/150?text=No+Image"
-            st.image(img_url, use_container_width=True)
-            st.write(f"**サイズ: {row['size']}**")
-            st.write(f"¥{row['price']:,} (残り{row['stock']}枚)")
-            
-            if st.button(f"カートに入れる", key=f"btn_{row['id']}"):
-                if row['stock'] > 0:
-                    st.session_state.cart.append({
-                        "id": row['id'],
-                        "name": f"{row['category']} ({row['size']})",
-                        "price": row['price']
-                    })
-                    st.toast(f"{row['category']} を追加しました！")
-                    st.rerun()
-                else:
-                    st.error("在庫切れです")
-
+            with cols[i]:
+                img_url = row['img'] if row['img'] else "https://via.placeholder.com/150?text=No+Image"
+                st.image(img_url, use_container_width=True)
+                st.write(f"**サイズ: {row['size']}**")
+                st.write(f"¥{row['price']:,} (残り{row['stock']}枚)")
+                
+                # --- 追加：枚数選択 ---
+                # 在庫が0なら選択できないようにする
+                quantity = st.number_input(
+                    "枚数", 
+                    min_value=1, 
+                    max_value=int(row['stock']) if row['stock'] > 0 else 1, 
+                    value=1, 
+                    key=f"qty_{row['id']}",
+                    disabled=(row['stock'] <= 0)
+                )
+                
+                if st.button(f"カートに入れる", key=f"btn_{row['id']}", use_container_width=True):
+                    if row['stock'] >= quantity:
+                        # 指定された枚数分、カートに追加する
+                        for _ in range(quantity):
+                            st.session_state.cart.append({
+                                "id": row['id'],
+                                "name": f"{row['category']} ({row['size']})",
+                                "price": row['price']
+                            })
+                        st.toast(f"{row['category']} を {quantity} 枚追加しました！")
+                        st.rerun()
+                    else:
+                        st.error("在庫が足りません")
     st.divider()
 
     st.subheader("🛒 現在のカート内容")
