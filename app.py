@@ -38,8 +38,6 @@ if "items_master" not in st.session_state:
             st.session_state.items_master = df
         else:
             st.session_state.items_master = pd.DataFrame(columns=["id", "category", "size", "price", "stock", "img"])
-            if df is None:
-                st.error("スプレッドシートに接続できません。Secretsを確認してください。")
 
 # --- 3. ナビゲーション ---
 st.sidebar.title("Shop Menu")
@@ -60,11 +58,9 @@ def show_order_form():
         st.info("現在、準備中です。しばらくお待ちください。")
         return
 
-    # ステップ1: 商品選択
     st.subheader("1. 商品を選んでカートに追加")
     categories = items_df['category'].unique()
     selected_cat = st.selectbox("種類で絞り込む", categories)
-    
     filtered_items = items_df[items_df['category'] == selected_cat]
     
     cols = st.columns(len(filtered_items) if len(filtered_items) > 0 else 1)
@@ -87,11 +83,7 @@ def show_order_form():
             if st.button(f"カートに入れる", key=f"btn_{row['id']}", use_container_width=True):
                 if row['stock'] >= quantity:
                     for _ in range(quantity):
-                        st.session_state.cart.append({
-                            "id": row['id'],
-                            "name": f"{row['category']} ({row['size']})",
-                            "price": row['price']
-                        })
+                        st.session_state.cart.append({"id": row['id'], "name": f"{row['category']} ({row['size']})", "price": row['price']})
                     st.toast(f"{row['category']} を追加しました！")
                     st.rerun()
                 else:
@@ -99,7 +91,6 @@ def show_order_form():
 
     st.divider()
 
-    # ステップ2: カート確認
     st.subheader("🛒 現在のカート内容")
     if not st.session_state.cart:
         st.write("カートは空です。")
@@ -137,10 +128,8 @@ def show_order_form():
         
         st.markdown(f'<div style="background-color: #f0f2f6; padding: 20px; border-radius: 10px; text-align: center; margin: 20px 0;">合計金額: <span style="font-size: 32px; font-weight: bold; color: #ff4b4b;">¥{total_price:,}</span></div>', unsafe_allow_html=True)
 
-    # ステップ3: お客様情報入力 & 確定フロー
     if total_price > 0:
         st.subheader("2. お客様情報の入力")
-        
         col_u1, col_u2 = st.columns(2)
         with col_u1:
             user_name = st.text_input("お名前（フルネーム）")
@@ -158,69 +147,41 @@ def show_order_form():
                     st.rerun()
                 else:
                     st.error("お名前、電話番号、お振込名義は必須入力です")
-        
         else:
-            # 支払い案内エリア
-            st.markdown("""
-                <div style="background-color: #fff3cd; padding: 20px; border-radius: 10px; border: 1px solid #ffeeba; margin-top: 20px;">
-                    <h4 style="color: #856404; margin-top: 0;">💰 お支払いのご案内</h4>
-                    <p style="margin-bottom: 5px;">内容をご確認の上、お支払いをお願いいたします。</p>
-                </div>
-            """, unsafe_allow_html=True)
-
+            st.markdown("""<div style="background-color: #fff3cd; padding: 20px; border-radius: 10px; border: 1px solid #ffeeba; margin-top: 20px;">
+                    <h4 style="color: #856404; margin-top: 0;">💰 お支払いのご案内</h4></div>""", unsafe_allow_html=True)
             if pay_method == "PayPay":
                 st.warning(f"【PayPay】ID: **{st.session_state.config['paypay_id']}** へ送金してください。")
                 pay_ref = st.text_input("決済番号の下4桁（任意）")
             else:
                 st.warning(f"【銀行振込】{st.session_state.config['bank_info']} へお振り込みください。")
                 pay_ref = "銀行振込"
-
             st.write(f"**最終合計金額: ¥{total_price:,}**")
             has_paid = st.checkbox("支払いを完了しました（または後ほど必ず行います）")
-
             c_btn1, c_btn2 = st.columns(2)
             if c_btn1.button("入力し直す", use_container_width=True):
                 st.session_state.order_confirmed_step = False
                 st.rerun()
-
             if c_btn2.button("注文を確定する", use_container_width=True, type="primary"):
                 with st.spinner("注文データを送信中..."):
                     order_items = ", ".join([f"{info['name']} x {info['count']}" for info in summary.values()])
-                    order_data = [
-                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                        user_name,
-                        user_team,
-                        user_tel,
-                        transfer_name,
-                        order_items,
-                        total_price,
-                        pay_method,
-                        pay_ref,
-                        "未対応"
-                    ]
+                    order_data = [datetime.now().strftime("%Y-%m-%d %H:%M:%S"), user_name, user_team, user_tel, transfer_name, order_items, total_price, pay_method, pay_ref, "未対応"]
                     try:
                         database.add_order(order_data)
-                        st.balloons()
-                        st.success("注文が完了しました！ありがとうございます。")
-                        st.session_state.cart = []
-                        st.session_state.order_confirmed_step = False
-                        time.sleep(3)
-                        st.rerun()
+                        st.balloons(); st.success("注文完了！"); st.session_state.cart = []; st.session_state.order_confirmed_step = False
+                        time.sleep(3); st.rerun()
                     except Exception as e:
-                        st.error(f"送信エラーが発生しました。管理者にお問い合わせください。: {e}")
+                        st.error(f"エラー: {e}")
 
 # --- 5. 管理者用：管理パネル ---
 def show_admin_panel():
     st.title("⚙️ 管理者専用パネル")
-    
     if not st.session_state.authenticated:
         pwd = st.text_input("パスワード", type="password")
         if st.button("ログイン"):
             if pwd == st.secrets.get("admin_password", "admin123"):
-                st.session_state.authenticated = True
-                st.rerun()
-            else:
-                st.error("パスワードが違います")
+                st.session_state.authenticated = True; st.rerun()
+            else: st.error("パスワードが違います")
         return
 
     tab1, tab2, tab3 = st.tabs(["📊 受注管理", "📦 商品マスタ管理", "🔧 ショップ設定"])
@@ -229,35 +190,50 @@ def show_admin_panel():
         st.subheader("注文一覧")
         if st.button("最新の注文を読み込む"):
             orders_df = database.load_orders()
-            if orders_df is not None:
-                st.dataframe(orders_df, use_container_width=True)
-            else:
-                st.error("注文データの読み込みに失敗しました。")
+            if orders_df is not None: st.dataframe(orders_df, use_container_width=True)
 
     with tab2:
+        st.subheader("新商品の追加")
+        with st.expander("＋ 商品を新規登録する"):
+            new_cat = st.text_input("商品カテゴリ/名", placeholder="（例）ロゴTシャツ2026")
+            new_price = st.number_input("価格", value=3500, step=100)
+            size_list = ["S", "M", "L", "XL", "XXL"]
+            selected_sizes = []
+            size_cols = st.columns(len(size_list))
+            for i, s in enumerate(size_list):
+                if size_cols[i].checkbox(s, key=f"reg_s_{s}"):
+                    selected_sizes.append(s)
+            u_file = st.file_uploader("商品画像", type=["jpg", "png", "jpeg"])
+            
+            if st.button("この内容で登録（一時保存）"):
+                if new_cat and selected_sizes:
+                    with st.spinner("画像をアップロード中..."):
+                        img_url = storage.upload_image(u_file)
+                    current_df = st.session_state.items_master
+                    current_max_id = current_df['id'].astype(int).max() if not current_df.empty else 0
+                    new_rows = []
+                    for i, s in enumerate(selected_sizes):
+                        new_rows.append({"id": int(current_max_id + (i + 1)), "category": new_cat, "size": s, "price": new_price, "stock": 0, "img": img_url})
+                    st.session_state.items_master = pd.concat([current_df, pd.DataFrame(new_rows)], ignore_index=True)
+                    st.success("追加しました！下の「GSSに保存」ボタンで確定してください。")
+
+        st.divider()
         st.subheader("在庫・価格の編集")
         edited_df = st.data_editor(
             st.session_state.items_master,
-            column_config={
-                "id": None,
-                "price": st.column_config.NumberColumn("単価", format="¥%d"),
-                "img": st.column_config.ImageColumn("画像")
-            },
+            column_config={"id": None, "price": st.column_config.NumberColumn("単価", format="¥%d"), "img": st.column_config.ImageColumn("画像リンク")},
             hide_index=True, use_container_width=True
         )
-        
         if st.button("編集内容をGSSに保存", type="primary"):
-            if edited_df is not None:
-                with st.spinner("GSSを更新中..."):
-                    database.save_items(edited_df)
-                    st.session_state.items_master = edited_df
+            database.save_items(edited_df)
+            st.session_state.items_master = edited_df
+            st.success("マスターデータを更新しました")
 
     with tab3:
         st.subheader("ショップ設定")
         st.session_state.config['paypay_id'] = st.text_input("PayPay ID", value=st.session_state.config['paypay_id'])
         st.session_state.config['bank_info'] = st.text_area("銀行口座", value=st.session_state.config['bank_info'])
-        if st.button("設定を保存"):
-            st.success("保存しました")
+        if st.button("設定を保存"): st.success("保存しました")
 
 if app_mode == "注文フォーム":
     show_order_form()
